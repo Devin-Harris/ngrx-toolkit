@@ -61,4 +61,11 @@ export const lazyRoutes: Route[] = [
         (m) => m.ConditionalSettingComponent
       ),
   },
+  {
+    path: 'named',
+    loadComponent: () =>
+      import('./with-named/named.component').then(
+        (m) => m.NamedSettingComponent
+      ),
+  },
 ];

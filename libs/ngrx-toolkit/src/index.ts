@@ -34,3 +34,4 @@ export {
 export { withImmutableState } from './lib/immutable-state/with-immutable-state';
 export { withFeatureFactory } from './lib/with-feature-factory';
 export { withConditional, emptyFeature } from './lib/with-conditional';
+export { withNamed } from './lib/with-named';
