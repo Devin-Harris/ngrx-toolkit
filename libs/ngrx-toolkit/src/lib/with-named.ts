@@ -42,8 +42,8 @@ export type WithNamedOutputStore<Key extends string | number,
  *
  * signalStore(
  *   withCommonFeature(),
- *   withNamed('Area1', withCommonFeature()),
- *   withNamed('Area2', withCommonFeature()),
+ *   withNamed('Area1', withCommonFeature),
+ *   withNamed('Area2', withCommonFeature),
  *   withMethods((store) => ({
  *     log() {
  *       console.log(store.commonField())
@@ -65,17 +65,16 @@ export function withNamed<
     featureFactory: () => SignalStoreFeature<Input, Output>
 ): SignalStoreFeature<Input, WithNamedOutputFeatureResult<Key, Output>> {
     return (store) => {
-        const emptyStore = inject(signalStore({ providedIn: 'root' }, withState(() => ({}))))
-        const innerStore = featureFactory()(
-            emptyStore as Parameters<
-                SignalStoreFeature<Input, Output>
-            >[0]
-        );
+        /** Create and inject empty store, necessary without exposed export for getInitialStore or STATE_SOURCE symbol from ngrx library */
+        const emptyStore = inject(signalStore({ providedIn: 'root' }, withState(() => ({})))) as Parameters<
+            SignalStoreFeature<Input, Output>
+        >[0]
+        const innerStore = featureFactory()(emptyStore);
 
         const pStore = attachProps(key, innerStore)(store);
         const sStore = attachState(key, innerStore)(pStore);
         const mStore = attachMethods(key, innerStore)(sStore);
-        const hStore = attachHooks(key, innerStore)(mStore);
+        const hStore = attachHooks(innerStore)(mStore);
 
         attachStateSyncWatchers(key, hStore, innerStore);
 
@@ -102,18 +101,11 @@ function attachState<
     return (
         store: InnerSignalStore<Input['state'], Input['props'], Input['methods']>
     ) => {
-        type InnerStoreStateSignalKeyType = keyof typeof innerStore.stateSignals;
-        const innerStoreNamedKeyMap = {} as {
-            [x in InnerStoreStateSignalKeyType]: string;
-        };
-
         const storeWithState = withState(() => {
             const namedState: any = {};
             Object.keys(innerStore.stateSignals).forEach((k) => {
-                const namedKey = getNamedKey(key, k);
-                innerStoreNamedKeyMap[k as InnerStoreStateSignalKeyType] = namedKey;
-                namedState[namedKey] = (
-                    innerStore.stateSignals[k as InnerStoreStateSignalKeyType] as any
+                namedState[getNamedKey(key, k)] = (
+                    innerStore.stateSignals[k as keyof typeof innerStore.stateSignals] as any
                 )();
             });
             return namedState;
@@ -129,7 +121,6 @@ function attachMethods<
     Output extends SignalStoreFeatureResult
 >(
     key: Key,
-
     innerStore: InnerSignalStore<
         Output['state'],
         Output['props'],
@@ -156,7 +147,6 @@ function attachHooks<
     Input extends SignalStoreFeatureResult,
     Output extends SignalStoreFeatureResult
 >(
-    key: Key,
     innerStore: InnerSignalStore<
         Output['state'],
         Output['props'],
@@ -189,32 +179,17 @@ function attachProps<
     return (
         store: InnerSignalStore<Input['state'], Input['props'], Input['methods']>
     ) => {
-        /** Add props, state, and methods under provided key */
-        const { nonSignalProps, signalProps } = buildPropsInformation(
-            innerStore.props
-        );
-
         const storeWithProps = withProps(() => {
             const namedProps: any = {};
-            Object.keys(nonSignalProps).forEach((k) => {
-                namedProps[getNamedKey(key, k)] = nonSignalProps[
-                    k as keyof typeof nonSignalProps
+            Object.keys(innerStore.props).forEach((k) => {
+                namedProps[getNamedKey(key, k)] = innerStore.props[
+                    k as keyof typeof innerStore.props
                 ] as any;
             });
             return namedProps;
         })(store);
 
-        const storeWithComputed = withComputed(() => {
-            const namedComputed: any = {};
-            Object.keys(signalProps).forEach((k) => {
-                namedComputed[getNamedKey(key, k)] = signalProps[
-                    k as keyof typeof signalProps
-                ] as any;
-            });
-            return namedComputed;
-        })(storeWithProps);
-
-        return storeWithComputed;
+        return storeWithProps;
     };
 }
 
@@ -279,45 +254,4 @@ function attachStateSyncWatchers<
             patchState(innerStore, { ...unNamedState });
         }
     });
-}
-
-type PropsSignalsKeyType<PropsType> = {
-    [x in keyof PropsType]: PropsType[x] extends Signal<any> ? x : never;
-}[keyof PropsType];
-type PropsSignalsType<PropsType> = {
-    [x in PropsSignalsKeyType<PropsType>]: PropsType[x] extends Signal<any>
-    ? PropsType[x]
-    : never;
-};
-
-type PropsValueKeyType<PropsType> = {
-    [x in keyof PropsType]: PropsType[x] extends Signal<any> ? never : x;
-}[keyof PropsType];
-type PropsValueType<PropsType> = {
-    [x in PropsValueKeyType<PropsType>]: PropsType[x];
-};
-
-function buildPropsInformation<P extends object = object>(props: P) {
-    const propsKeys = Object.keys(props) as (keyof P)[];
-
-    const signalKeys = propsKeys.filter((k) =>
-        isSignal(props[k])
-    ) as PropsSignalsKeyType<P>[];
-    const signalProps = signalKeys.reduce((acc, k) => {
-        acc[k] = props[k] as PropsSignalsType<P>[typeof k];
-        return acc;
-    }, {} as PropsSignalsType<P>);
-
-    const nonSignalKeys = propsKeys.filter(
-        (k) => !isSignal(props[k])
-    ) as PropsValueKeyType<P>[];
-    const nonSignalProps = nonSignalKeys.reduce((acc, k) => {
-        acc[k] = props[k];
-        return acc;
-    }, {} as PropsValueType<P>);
-
-    return {
-        nonSignalProps,
-        signalProps,
-    };
 }
